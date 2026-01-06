@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Production build
+dist/
+
+# Cache directories
+.cache/
+*.cache
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local

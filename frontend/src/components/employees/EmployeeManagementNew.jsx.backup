@@ -1,0 +1,869 @@
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Box,
+  Paper,
+  Typography,
+  TextField,
+  InputAdornment,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
+  Button,
+  IconButton,
+  CircularProgress,
+  Alert,
+  Pagination,
+  Checkbox,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
+  TableSortLabel,
+  Popover,
+  FormGroup,
+  FormControlLabel,
+  Avatar,
+  Card,
+  CardContent,
+  Grid,
+  Badge,
+} from '@mui/material';
+import {
+  Search as SearchIcon,
+  Visibility as VisibilityIcon,
+  Clear as ClearIcon,
+  Delete as DeleteIcon,
+  DeleteSweep as DeleteSweepIcon,
+  FilterList as FilterListIcon,
+  Add as AddIcon,
+  Edit as EditIcon,
+  People as PeopleIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+} from '@mui/icons-material';
+import EmployeeService from '../../services/EmployeeService';
+import dayjs from 'dayjs';
+
+const EmployeeManagementNew = () => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [totalEmployees, setTotalEmployees] = useState(0);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage] = useState(50);
+  const [stats, setStats] = useState({
+    totalEmployees: 0,
+    activeEmployees: 0,
+    inactiveEmployees: 0,
+  });
+  const [selectedEmployees, setSelectedEmployees] = useState([]);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [orderBy, setOrderBy] = useState('employeeCode');
+  const [order, setOrder] = useState('asc');
+  
+  // Filter states
+  const [filters, setFilters] = useState({
+    employmentStatus: [],
+    status: [],
+    branch: [],
+    designation: [],
+  });
+  
+  // Column filter popover states
+  const [columnFilterAnchors, setColumnFilterAnchors] = useState({
+    employmentStatus: null,
+    status: null,
+    branch: null,
+    designation: null,
+  });
+  
+  // All available filter options
+  const [filterOptions, setFilterOptions] = useState({
+    employmentStatus: [],
+    status: [],
+    branch: [],
+    designation: [],
+  });
+
+  useEffect(() => {
+    fetchEmployees();
+    fetchFilterOptions();
+  }, [page, searchQuery]);
+
+  const fetchEmployees = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await EmployeeService.getEmployees({
+        page,
+        limit: rowsPerPage,
+        search: searchQuery
+      });
+
+      setEmployees(response.data || []);
+      setTotalEmployees(response.pagination?.totalRecords || 0);
+      
+      // Calculate stats
+      const data = response.data || [];
+      const active = data.filter(emp => emp.employmentStatus === 'Active').length;
+      const inactive = data.filter(emp => emp.employmentStatus !== 'Active').length;
+      
+      setStats({
+        totalEmployees: response.pagination?.totalRecords || 0,
+        activeEmployees: active,
+        inactiveEmployees: inactive,
+      });
+
+    } catch (err) {
+      console.error('Error fetching employees:', err);
+      setError('Failed to load employees');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchFilterOptions = async () => {
+    try {
+      const response = await EmployeeService.getFilterOptions();
+      setFilterOptions(response.data || {});
+    } catch (err) {
+      console.error('Error fetching filter options:', err);
+    }
+  };
+
+  // Apply filters and sorting
+  const filteredAndSortedEmployees = React.useMemo(() => {
+    let filtered = [...employees];
+
+    // Apply filters
+    if (filters.employmentStatus.length > 0) {
+      filtered = filtered.filter(emp => filters.employmentStatus.includes(emp.employmentStatus));
+    }
+    if (filters.status.length > 0) {
+      filtered = filtered.filter(emp => filters.status.includes(emp.status));
+    }
+    if (filters.branch.length > 0) {
+      filtered = filtered.filter(emp => filters.branch.includes(emp.branch));
+    }
+    if (filters.designation.length > 0) {
+      filtered = filtered.filter(emp => filters.designation.includes(emp.designation));
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      const aValue = a[orderBy] || '';
+      const bValue = b[orderBy] || '';
+      
+      if (order === 'asc') {
+        return aValue > bValue ? 1 : -1;
+      } else {
+        return aValue < bValue ? 1 : -1;
+      }
+    });
+
+    return filtered;
+  }, [employees, filters, orderBy, order]);
+
+  const handleSearchChange = (event) => {
+    setSearchQuery(event.target.value);
+    setPage(1);
+  };
+
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setPage(1);
+  };
+
+  const handlePageChange = (event, value) => {
+    setPage(value);
+  };
+
+  const handleSort = (property) => {
+    const isAsc = orderBy === property && order === 'asc';
+    setOrder(isAsc ? 'desc' : 'asc');
+    setOrderBy(property);
+  };
+
+  const handleViewEmployee = (employee) => {
+    navigate(`/employees/${employee._id}`);
+  };
+
+  const handleEditEmployee = (employee) => {
+    navigate(`/employees/edit/${employee._id}`);
+  };
+
+  const handleAddEmployee = () => {
+    navigate('/employees/new');
+  };
+
+  const handleDeleteEmployee = async (employeeId) => {
+    if (!window.confirm('Are you sure you want to delete this employee? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await EmployeeService.deleteEmployee(employeeId);
+      await fetchEmployees();
+    } catch (error) {
+      setError(error.message || 'Failed to delete employee');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Column filter handlers
+  const handleColumnFilterOpen = (event, column) => {
+    setColumnFilterAnchors(prev => ({
+      ...prev,
+      [column]: event.currentTarget
+    }));
+  };
+
+  const handleColumnFilterClose = (column) => {
+    setColumnFilterAnchors(prev => ({
+      ...prev,
+      [column]: null
+    }));
+  };
+
+  const handleColumnFilterChange = (column, value) => {
+    setFilters(prev => {
+      const currentValues = prev[column];
+      const newValues = currentValues.includes(value)
+        ? currentValues.filter(v => v !== value)
+        : [...currentValues, value];
+      
+      return {
+        ...prev,
+        [column]: newValues
+      };
+    });
+    setPage(1);
+  };
+
+  const handleClearAllFilters = () => {
+    setFilters({
+      employmentStatus: [],
+      status: [],
+      branch: [],
+      designation: [],
+    });
+  };
+
+  // Selection handlers
+  const handleSelectAll = (event) => {
+    if (event.target.checked) {
+      const allIds = filteredAndSortedEmployees.map(emp => emp._id);
+      setSelectedEmployees(allIds);
+    } else {
+      setSelectedEmployees([]);
+    }
+  };
+
+  const handleSelectOne = (employeeId) => {
+    const selectedIndex = selectedEmployees.indexOf(employeeId);
+    let newSelected = [];
+
+    if (selectedIndex === -1) {
+      newSelected = [...selectedEmployees, employeeId];
+    } else {
+      newSelected = selectedEmployees.filter(id => id !== employeeId);
+    }
+
+    setSelectedEmployees(newSelected);
+  };
+
+  const isSelected = (employeeId) => selectedEmployees.indexOf(employeeId) !== -1;
+
+  // Delete handlers
+  const handleDeleteClick = () => {
+    if (selectedEmployees.length === 0) return;
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    try {
+      setLoading(true);
+      await EmployeeService.bulkDeleteEmployees(selectedEmployees);
+      
+      setDeleteDialogOpen(false);
+      setSelectedEmployees([]);
+      await fetchEmployees();
+    } catch (error) {
+      setError(error.message || 'Failed to delete employees');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+  };
+
+  // Status color helper
+  const getEmploymentStatusColor = (status) => {
+    switch (status) {
+      case 'Active':
+        return 'success';
+      case 'Inactive':
+        return 'default';
+      case 'On Leave':
+        return 'warning';
+      case 'Resigned':
+        return 'error';
+      case 'Terminated':
+        return 'error';
+      default:
+        return 'default';
+    }
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Confirmed':
+        return 'success';
+      case 'Probation':
+        return 'warning';
+      case 'Contract':
+        return 'info';
+      case 'Trainee':
+        return 'default';
+      default:
+        return 'default';
+    }
+  };
+
+  const hasActiveFilters = () => {
+    return Object.values(filters).some(filter => filter.length > 0);
+  };
+
+  return (
+    <Box sx={{ p: 2, width: '100%', height: '100%' }}>
+      {/* Header */}
+      <Box sx={{ 
+        mb: 3,
+        p: 3,
+        background: 'linear-gradient(135deg, #2C8C99 0%, #1e6370 100%)',
+        borderRadius: 2,
+        boxShadow: '0 4px 20px rgba(44, 140, 153, 0.3)',
+      }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box>
+            <Typography 
+              variant="h4" 
+              sx={{
+                color: '#ffffff',
+                fontWeight: 700,
+                mb: 1,
+              }}
+            >
+              👥 Employee Management
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#e0f7fa' }}>
+              Manage employee information, records, and documentation
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleAddEmployee}
+            sx={{
+              background: 'linear-gradient(135deg, #FFB74D 0%, #FFA726 100%)',
+              color: '#000',
+              fontWeight: 600,
+              px: 3,
+              py: 1.5,
+              borderRadius: 2,
+              boxShadow: '0 4px 12px rgba(255, 183, 77, 0.4)',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #FFA726 0%, #FF9800 100%)',
+                boxShadow: '0 6px 16px rgba(255, 183, 77, 0.5)',
+              },
+            }}
+          >
+            Add New Employee
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Statistics Cards */}
+      <Grid container spacing={2} sx={{ mb: 3 }}>
+        <Grid item xs={12} md={4}>
+          <Card sx={{ 
+            background: 'linear-gradient(135deg, #2C8C99 0%, #1e6370 100%)',
+            color: '#fff',
+            borderRadius: 2,
+            boxShadow: '0 2px 8px rgba(44, 140, 153, 0.3)',
+          }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                    Total Employees
+                  </Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {stats.totalEmployees}
+                  </Typography>
+                </Box>
+                <PeopleIcon sx={{ fontSize: 48, opacity: 0.5 }} />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <Card sx={{ 
+            background: 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
+            color: '#fff',
+            borderRadius: 2,
+            boxShadow: '0 2px 8px rgba(76, 175, 80, 0.3)',
+          }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                    Active Employees
+                  </Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {stats.activeEmployees}
+                  </Typography>
+                </Box>
+                <CheckCircleIcon sx={{ fontSize: 48, opacity: 0.5 }} />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} md={4}>
+          <Card sx={{ 
+            background: 'linear-gradient(135deg, #FFB74D 0%, #FFA726 100%)',
+            color: '#fff',
+            borderRadius: 2,
+            boxShadow: '0 2px 8px rgba(255, 183, 77, 0.3)',
+          }}>
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="body2" sx={{ opacity: 0.9, mb: 1 }}>
+                    Inactive Employees
+                  </Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 700 }}>
+                    {stats.inactiveEmployees}
+                  </Typography>
+                </Box>
+                <CancelIcon sx={{ fontSize: 48, opacity: 0.5 }} />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Search and Actions Bar */}
+      <Paper sx={{ p: 2, mb: 2, borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField
+            placeholder="Search employees by name, code, email, or phone..."
+            variant="outlined"
+            size="small"
+            value={searchQuery}
+            onChange={handleSearchChange}
+            sx={{ 
+              flex: 1, 
+              minWidth: 300,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+                '&:hover fieldset': {
+                  borderColor: '#2C8C99',
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: '#2C8C99',
+                },
+              },
+            }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon sx={{ color: '#2C8C99' }} />
+                </InputAdornment>
+              ),
+              endAdornment: searchQuery && (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={handleClearSearch}>
+                    <ClearIcon />
+                  </IconButton>
+                </InputAdornment>
+              ),
+            }}
+          />
+
+          {hasActiveFilters() && (
+            <Button
+              variant="text"
+              onClick={handleClearAllFilters}
+              sx={{
+                color: '#d32f2f',
+                fontWeight: 600,
+              }}
+            >
+              Clear All Filters
+            </Button>
+          )}
+
+          {selectedEmployees.length > 0 && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<DeleteSweepIcon />}
+              onClick={handleDeleteClick}
+              sx={{
+                borderRadius: 2,
+                fontWeight: 600,
+              }}
+            >
+              Delete Selected ({selectedEmployees.length})
+            </Button>
+          )}
+        </Box>
+      </Paper>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Employee Table */}
+      <Paper sx={{ borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ background: 'linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)' }}>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedEmployees.length > 0 && selectedEmployees.length < filteredAndSortedEmployees.length}
+                    checked={filteredAndSortedEmployees.length > 0 && selectedEmployees.length === filteredAndSortedEmployees.length}
+                    onChange={handleSelectAll}
+                    sx={{
+                      color: '#2C8C99',
+                      '&.Mui-checked': {
+                        color: '#2C8C99',
+                      },
+                    }}
+                  />
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={orderBy === 'employeeCode'}
+                    direction={orderBy === 'employeeCode' ? order : 'asc'}
+                    onClick={() => handleSort('employeeCode')}
+                    sx={{ fontWeight: 700, color: '#2C8C99' }}
+                  >
+                    Employee Code
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={orderBy === 'fullName'}
+                    direction={orderBy === 'fullName' ? order : 'asc'}
+                    onClick={() => handleSort('fullName')}
+                    sx={{ fontWeight: 700, color: '#2C8C99' }}
+                  >
+                    Name
+                  </TableSortLabel>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#2C8C99' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Designation
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleColumnFilterOpen(e, 'designation')}
+                      sx={{ 
+                        color: filters.designation.length > 0 ? '#FFB74D' : '#666',
+                      }}
+                    >
+                      <Badge badgeContent={filters.designation.length} color="error">
+                        <FilterListIcon fontSize="small" />
+                      </Badge>
+                    </IconButton>
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#2C8C99' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Branch
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleColumnFilterOpen(e, 'branch')}
+                      sx={{ 
+                        color: filters.branch.length > 0 ? '#FFB74D' : '#666',
+                      }}
+                    >
+                      <Badge badgeContent={filters.branch.length} color="error">
+                        <FilterListIcon fontSize="small" />
+                      </Badge>
+                    </IconButton>
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#2C8C99' }}>Contact</TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#2C8C99' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Employment Status
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleColumnFilterOpen(e, 'employmentStatus')}
+                      sx={{ 
+                        color: filters.employmentStatus.length > 0 ? '#FFB74D' : '#666',
+                      }}
+                    >
+                      <Badge badgeContent={filters.employmentStatus.length} color="error">
+                        <FilterListIcon fontSize="small" />
+                      </Badge>
+                    </IconButton>
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#2C8C99' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Status
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleColumnFilterOpen(e, 'status')}
+                      sx={{ 
+                        color: filters.status.length > 0 ? '#FFB74D' : '#666',
+                      }}
+                    >
+                      <Badge badgeContent={filters.status.length} color="error">
+                        <FilterListIcon fontSize="small" />
+                      </Badge>
+                    </IconButton>
+                  </Box>
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#2C8C99' }}>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                    <CircularProgress sx={{ color: '#2C8C99' }} />
+                  </TableCell>
+                </TableRow>
+              ) : filteredAndSortedEmployees.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                    <Typography variant="body1" color="textSecondary">
+                      No employees found
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredAndSortedEmployees.map((employee) => {
+                  const isItemSelected = isSelected(employee._id);
+                  return (
+                    <TableRow
+                      key={employee._id}
+                      hover
+                      selected={isItemSelected}
+                      sx={{
+                        '&:hover': {
+                          backgroundColor: 'rgba(44, 140, 153, 0.05)',
+                        },
+                        '&.Mui-selected': {
+                          backgroundColor: 'rgba(44, 140, 153, 0.1)',
+                        },
+                      }}
+                    >
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={isItemSelected}
+                          onChange={() => handleSelectOne(employee._id)}
+                          sx={{
+                            color: '#2C8C99',
+                            '&.Mui-checked': {
+                              color: '#2C8C99',
+                            },
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                          {employee.employeeCode}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Avatar sx={{ bgcolor: '#2C8C99', width: 32, height: 32 }}>
+                            {employee.fullName?.charAt(0) || 'E'}
+                          </Avatar>
+                          <Typography variant="body2">
+                            {employee.fullName}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{employee.designation || '-'}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{employee.branch || '-'}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontSize: '0.875rem' }}>
+                          {employee.contactNumber || '-'}
+                        </Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {employee.emailId}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={employee.employmentStatus || 'Unknown'} 
+                          size="small"
+                          color={getEmploymentStatusColor(employee.employmentStatus)}
+                          sx={{ fontWeight: 600 }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={employee.status || 'Unknown'} 
+                          size="small"
+                          color={getStatusColor(employee.status)}
+                          sx={{ fontWeight: 600 }}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleViewEmployee(employee)}
+                            sx={{ 
+                              color: '#2C8C99',
+                              '&:hover': { backgroundColor: 'rgba(44, 140, 153, 0.1)' }
+                            }}
+                            title="View Employee"
+                          >
+                            <VisibilityIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleEditEmployee(employee)}
+                            sx={{ 
+                              color: '#FFB74D',
+                              '&:hover': { backgroundColor: 'rgba(255, 183, 77, 0.1)' }
+                            }}
+                            title="Edit Employee"
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDeleteEmployee(employee._id)}
+                            sx={{ 
+                              color: '#f44336',
+                              '&:hover': { backgroundColor: 'rgba(244, 67, 54, 0.1)' }
+                            }}
+                            title="Delete Employee"
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+
+        {/* Pagination */}
+        <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
+          <Pagination
+            count={Math.ceil(totalEmployees / rowsPerPage)}
+            page={page}
+            onChange={handlePageChange}
+            color="primary"
+            sx={{
+              '& .MuiPaginationItem-root': {
+                color: '#2C8C99',
+              },
+              '& .Mui-selected': {
+                backgroundColor: '#2C8C99 !important',
+                color: '#fff',
+              },
+            }}
+          />
+        </Box>
+      </Paper>
+
+      {/* Column Filter Popovers */}
+      {Object.keys(columnFilterAnchors).map((column) => (
+        <Popover
+          key={column}
+          open={Boolean(columnFilterAnchors[column])}
+          anchorEl={columnFilterAnchors[column]}
+          onClose={() => handleColumnFilterClose(column)}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'left',
+          }}
+        >
+          <Box sx={{ p: 2, minWidth: 200, maxWidth: 300 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700, color: '#2C8C99' }}>
+              Filter by {column.replace(/([A-Z])/g, ' $1').trim()}
+            </Typography>
+            <FormGroup>
+              {(filterOptions[column] || []).map((option) => (
+                <FormControlLabel
+                  key={option}
+                  control={
+                    <Checkbox
+                      checked={filters[column].includes(option)}
+                      onChange={() => handleColumnFilterChange(column, option)}
+                      sx={{
+                        color: '#2C8C99',
+                        '&.Mui-checked': {
+                          color: '#2C8C99',
+                        },
+                      }}
+                    />
+                  }
+                  label={option}
+                />
+              ))}
+            </FormGroup>
+          </Box>
+        </Popover>
+      ))}
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete {selectedEmployees.length} employee(s)? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} sx={{ color: '#666' }}>
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default EmployeeManagementNew;
