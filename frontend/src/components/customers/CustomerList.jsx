@@ -1,0 +1,612 @@
+import React, { useState, useMemo, useCallback } from 'react';
+import {
+  Box,
+  Paper,
+  Typography,
+  Button,
+  TextField,
+  Grid,
+  Card,
+  CardContent,
+  Chip,
+  IconButton,
+  Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  Skeleton,
+} from '@mui/material';
+import {
+  DataGrid,
+  GridToolbarContainer,
+  GridToolbarExport,
+  GridToolbarFilterButton,
+  GridToolbarColumnsButton,
+} from '@mui/x-data-grid';
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Visibility as ViewIcon,
+  Search as SearchIcon,
+  Refresh as RefreshIcon,
+} from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
+import { debounce } from 'lodash';
+import dayjs from 'dayjs';
+
+import { useCustomers, useDeleteCustomer, useBulkDeleteCustomers } from '../../hooks/useCustomers';
+import ConnectionStatus from '../ConnectionStatus';
+import DataLoadingState from '../DataLoadingState';
+
+// Custom toolbar component
+const CustomToolbar = ({ onRefresh, selectedRows, onBulkDelete }) => {
+  return (
+    <GridToolbarContainer>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexGrow: 1 }}>
+        <GridToolbarColumnsButton />
+        <GridToolbarFilterButton />
+        <GridToolbarExport />
+        <Tooltip title="Refresh">
+          <IconButton onClick={onRefresh} size="small">
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
+        {selectedRows.length > 0 && (
+          <Button
+            startIcon={<DeleteIcon />}
+            onClick={onBulkDelete}
+            color="error"
+            variant="outlined"
+            size="small"
+          >
+            Delete {selectedRows.length} selected
+          </Button>
+        )}
+      </Box>
+    </GridToolbarContainer>
+  );
+};
+
+const CustomerList = () => {
+  const navigate = useNavigate();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [stateFilter, setStateFilter] = useState('');
+  const [paginationModel, setPaginationModel] = useState({
+    page: 0,
+    pageSize: 25,
+  });
+  const [selectedRows, setSelectedRows] = useState([]);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState(null);
+
+  // Build query parameters
+  const queryParams = useMemo(() => ({
+    page: paginationModel.page + 1,
+    limit: paginationModel.pageSize,
+    search: searchTerm,
+    status: statusFilter,
+    state: stateFilter,
+  }), [paginationModel, searchTerm, statusFilter, stateFilter]);
+
+  // Fetch customers
+  const { data, isLoading, error, refetch } = useCustomers(queryParams);
+  const deleteCustomerMutation = useDeleteCustomer();
+  const bulkDeleteMutation = useBulkDeleteCustomers();
+
+
+
+  // Debounced search
+  const debouncedSearch = useMemo(
+    () => debounce((value) => setSearchTerm(value), 500),
+    []
+  );
+
+  // Handle search input
+  const handleSearchChange = useCallback((event) => {
+    debouncedSearch(event.target.value);
+  }, [debouncedSearch]);
+
+  // Handle delete
+  const handleDelete = (customer) => {
+    setCustomerToDelete(customer);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (customerToDelete) {
+      deleteCustomerMutation.mutate(customerToDelete.id);
+      setDeleteConfirmOpen(false);
+      setCustomerToDelete(null);
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedRows.length > 0) {
+      bulkDeleteMutation.mutate(selectedRows);
+      setSelectedRows([]);
+    }
+  };
+
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+    }).format(amount || 0);
+  };
+
+  // Format date
+  const formatDate = (date) => {
+    return date ? dayjs(date).format('DD/MM/YYYY') : '-';
+  };
+
+  // Get status color
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'Active': return 'success';
+      case 'NPA': return 'error';
+      case 'Closed': return 'default';
+      default: return 'info';
+    }
+  };
+
+  // Define columns
+  const columns = [
+    {
+      field: 'loanId',
+      headerName: 'Loan ID',
+      width: 150,
+      renderCell: (params) => (
+        <Tooltip title="Click to view details">
+          <Button
+            variant="text"
+            onClick={() => navigate(`/customers/${params.row.id}`)}
+            sx={{ textTransform: 'none', p: 0, minWidth: 'auto' }}
+          >
+            {params.value}
+          </Button>
+        </Tooltip>
+      ),
+    },
+    {
+      field: 'accountName',
+      headerName: 'Customer Name',
+      width: 200,
+      renderCell: (params) => (
+        <Typography variant="body2" noWrap>
+          {params.value}
+        </Typography>
+      ),
+    },
+    {
+      field: 'mobileNo',
+      headerName: 'Mobile',
+      width: 130,
+    },
+    {
+      field: 'city',
+      headerName: 'City',
+      width: 120,
+    },
+    {
+      field: 'state',
+      headerName: 'State',
+      width: 120,
+    },
+    {
+      field: 'status',
+      headerName: 'Status',
+      width: 100,
+      renderCell: (params) => (
+        <Chip
+          label={params.value}
+          size="small"
+          color={getStatusColor(params.value)}
+          variant="outlined"
+        />
+      ),
+    },
+    {
+      field: 'totalOverDue',
+      headerName: 'Overdue',
+      width: 120,
+      type: 'number',
+      renderCell: (params) => (
+        <Typography
+          variant="body2"
+          color={params.value > 0 ? 'error' : 'textSecondary'}
+          fontWeight={params.value > 0 ? 'bold' : 'normal'}
+        >
+          {formatCurrency(params.value)}
+        </Typography>
+      ),
+    },
+    {
+      field: 'sanctionDate',
+      headerName: 'Sanction Date',
+      width: 120,
+      renderCell: (params) => formatDate(params.value),
+    },
+    {
+      field: 'actions',
+      headerName: 'Actions',
+      width: 120,
+      sortable: false,
+      filterable: false,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="View">
+            <IconButton
+              size="small"
+              onClick={() => navigate(`/customers/${params.row.id}`)}
+            >
+              <ViewIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Edit">
+            <IconButton
+              size="small"
+              onClick={() => navigate(`/customers/${params.row.id}/edit`)}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Delete">
+            <IconButton
+              size="small"
+              onClick={() => handleDelete(params.row)}
+              color="error"
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      ),
+    },
+  ];
+
+  // Don't show loading state for subsequent requests (keep previous data visible)
+  const showInitialLoading = isLoading && !data;
+  const hasData = data && data.data && data.data.length > 0;
+
+  return (
+    <Box sx={{ width: '100%', position: 'relative' }}>
+      {/* Connection Status */}
+      <ConnectionStatus />
+
+      {/* Header */}
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h4" gutterBottom>
+          Customer Records
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => navigate('/customers/new')}
+        >
+          Add Customer
+        </Button>
+      </Box>
+
+      {/* Main Content with Enhanced Error Handling */}
+      {/* Customer List Content - Loading Overlay removed for JSX stability */}
+
+      {/* Loading Overlay for subsequent requests */}
+      {isLoading && data && (
+        <Box
+          sx={{
+            position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 1000,
+                borderRadius: 1,
+                transition: 'opacity 0.3s ease-in-out',
+                backdropFilter: 'blur(2px)',
+              }}
+            >
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="body1" color="primary" sx={{ mb: 1, fontWeight: 'medium' }}>
+                  Refreshing customer data...
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  This will just take a moment
+                </Typography>
+              </Box>
+            </Box>
+          )}
+
+        {/* Quick Customer Finder */}
+        <Paper sx={{ p: 3, mb: 3, background: 'linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+          <SearchIcon sx={{ color: 'primary.main', mr: 1, fontSize: 28 }} />
+          <Typography variant="h6" color="primary">
+            Quick Customer Finder
+          </Typography>
+        </Box>
+        <Grid container spacing={2}>
+          <Grid item xs={12} md={8}>
+            <TextField
+              fullWidth
+              variant="filled"
+              placeholder="Enter customer name, loan ID, email, or phone number to find specific customer..."
+              onChange={handleSearchChange}
+              sx={{
+                backgroundColor: 'white',
+                borderRadius: 1,
+                '& .MuiFilledInput-root': {
+                  backgroundColor: 'white',
+                  '&:hover': {
+                    backgroundColor: 'white',
+                  },
+                  '&.Mui-focused': {
+                    backgroundColor: 'white',
+                  },
+                },
+              }}
+              InputProps={{
+                startAdornment: <SearchIcon sx={{ color: 'primary.main', mr: 1 }} />,
+                endAdornment: (
+                  <Tooltip title="Advanced search available in filters below">
+                    <IconButton size="small">
+                      <SearchIcon />
+                    </IconButton>
+                  </Tooltip>
+                ),
+              }}
+            />
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Box sx={{ display: 'flex', gap: 1, height: '100%', alignItems: 'center' }}>
+              <Chip
+                label={`${data?.pagination?.totalRecords || 0} Total Customers`}
+                color="primary"
+                variant="outlined"
+              />
+              <Chip
+                label="Real-time Search"
+                color="success"
+                size="small"
+              />
+            </Box>
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {/* Summary Cards */}
+      {data && (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card>
+              <CardContent>
+                <Typography color="textSecondary" gutterBottom variant="body2">
+                  Total Customers
+                </Typography>
+                <Typography variant="h5" color="primary">
+                  {data.pagination?.totalRecords || 0}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card>
+              <CardContent>
+                <Typography color="textSecondary" gutterBottom variant="body2">
+                  Showing
+                </Typography>
+                <Typography variant="h5">
+                  {data.data?.length || 0}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card>
+              <CardContent>
+                <Typography color="textSecondary" gutterBottom variant="body2">
+                  Current Page
+                </Typography>
+                <Typography variant="h5">
+                  {data.pagination?.current || 1}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <Card>
+              <CardContent>
+                <Typography color="textSecondary" gutterBottom variant="body2">
+                  Total Pages
+                </Typography>
+                <Typography variant="h5">
+                  {data.pagination?.total || 1}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* Filters */}
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} sm={6} md={4}>
+            <TextField
+              fullWidth
+              variant="outlined"
+              placeholder="Search by name, loan ID, email, phone..."
+              onChange={handleSearchChange}
+              InputProps={{
+                startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1 }} />,
+              }}
+              helperText="Search across multiple fields for better results"
+            />
+          </Grid>
+          <Grid item xs={12} sm={3} md={2}>
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                label="Status"
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <MenuItem value="">All</MenuItem>
+                <MenuItem value="Active">Active</MenuItem>
+                <MenuItem value="NPA">NPA</MenuItem>
+                <MenuItem value="Closed">Closed</MenuItem>
+                <MenuItem value="Inactive">Inactive</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} sm={3} md={2}>
+            <TextField
+              fullWidth
+              label="State"
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value)}
+            />
+          </Grid>
+        </Grid>
+      </Paper>
+
+      {/* Status Legend */}
+      <Paper sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+        <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
+          Customer Status Legend:
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 16, height: 16, bgcolor: 'rgba(255, 235, 238, 0.8)', borderLeft: '4px solid #f44336' }} />
+            <Typography variant="caption">Overdue Payments</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 16, height: 16, bgcolor: 'rgba(255, 205, 210, 0.5)', borderLeft: '4px solid #d32f2f' }} />
+            <Typography variant="caption">NPA Status</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 16, height: 16, bgcolor: 'white', border: '1px solid #e0e0e0' }} />
+            <Typography variant="caption">Normal Status</Typography>
+          </Box>
+        </Box>
+      </Paper>
+
+      {/* Data Grid */}
+      <Paper sx={{ width: '100%', mb: 2 }}>
+        <DataGrid
+          rows={data?.data || []}
+          columns={columns}
+          loading={isLoading}
+          paginationModel={paginationModel}
+          onPaginationModelChange={setPaginationModel}
+          paginationMode="server"
+          rowCount={data?.pagination?.totalRecords || 0}
+          pageSizeOptions={[10, 25, 50, 100]}
+          checkboxSelection
+          disableRowSelectionOnClick
+          onRowSelectionModelChange={setSelectedRows}
+          rowSelectionModel={selectedRows}
+          slots={{
+            toolbar: () => (
+              <CustomToolbar
+                onRefresh={refetch}
+                selectedRows={selectedRows}
+                onBulkDelete={handleBulkDelete}
+              />
+            ),
+            loadingOverlay: () => (
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  gap: 2,
+                  backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                }}
+              >
+                <Typography variant="h6" color="primary">
+                  Loading customers...
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Please wait while we fetch your data
+                </Typography>
+              </Box>
+            ),
+          }}
+          getRowClassName={(params) => {
+            if (params.row.totalOverDue > 0) {
+              return 'overdue-payment-row';
+            }
+            if (params.row.status === 'NPA') {
+              return 'npa-status-row';
+            }
+            return '';
+          }}
+          sx={{
+            height: 600,
+            '& .MuiDataGrid-row:hover': {
+              backgroundColor: 'rgba(0, 0, 0, 0.04)',
+            },
+            '& .overdue-payment-row': {
+              backgroundColor: 'rgba(255, 235, 238, 0.5)',
+              borderLeft: '4px solid #f44336',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 235, 238, 0.7)',
+              },
+            },
+            '& .npa-status-row': {
+              backgroundColor: 'rgba(255, 205, 210, 0.3)',
+              borderLeft: '4px solid #d32f2f',
+              '&:hover': {
+                backgroundColor: 'rgba(255, 205, 210, 0.5)',
+              },
+            },
+          }}
+        />
+      </Paper>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete customer "{customerToDelete?.accountName}"?
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmDelete}
+            color="error"
+            disabled={deleteCustomerMutation.isLoading}
+          >
+            {deleteCustomerMutation.isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default CustomerList;
