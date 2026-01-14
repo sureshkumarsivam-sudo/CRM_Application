@@ -360,7 +360,7 @@ const Layout = ({ children }) => {
               }}
               onClick={() => navigate('/dashboard')}
             >
-              📊 Academic ERP
+              📊 Debtrix
             </Typography>
 
             {/* Desktop Menu */}
