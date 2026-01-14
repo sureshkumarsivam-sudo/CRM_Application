@@ -214,7 +214,7 @@ const Layout = ({ children }) => {
             letterSpacing: '0.5px',
           }}
         >
-          📊 Academic ERP
+          📊 Debtrix
         </Typography>
         <IconButton onClick={handleDrawerToggle} sx={{ color: '#FFFFFF' }}>
           <CloseIcon />
